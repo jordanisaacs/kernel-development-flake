@@ -17,7 +17,6 @@ The first way is recommended if you just want to get up and running immediately 
 * Nix functions for building Rust and C kernel modules
 * QEMU VM support using Nix's built in functions for generating an initramfs
 * Remote GDB debugging through the VM
-* Comes with an editor that is configured to have language diagnostics for C and Rust development (can be disabled)
 * Out of tree rust-analyzer support
 
 ## Cloning the flake
@@ -115,11 +114,11 @@ Then a new package set called `linuxDev` is then added as an overlay using `linu
 
 ### Rust Support
 
-Rust support is enabled by default using kernel version 6.1. You can disable Rust support and the kernel will build without it by setting `enableRust = false` in `flake.nix`. Note that you cannot do much with Rust in 6.1 so there is a second option to use Rust For Linux's branch. This is disabled by default and can be turn on by setting `useRustForLinux = true` in `flake.nix`. It will change from building the `rust/rust_out_of_tree.rs` module to the `rfl_rust/rust_out_of_tree.rs` by default. The `enableRust` option can be passed 
+Rust support is enabled by using the default configuration with `enableRust = true` or setting `RUST = true` in the kernel configuration. The build will automatically pick up up the value set in the kernel config and build correctly.
 
 ### Kernel Modules
 
-The kernel modules are built using nix. You can build them manually with `nix build .#helloworld` and `nix build .#rustOutOfTree`. They are copied into the initramfs for you. There is a `buildCModule` and `buildRustModule` function exposed for building your own modules (`build/rust-module.nix` and `build/c-module.nix`).
+The kernel modules are built using nix. You can build them manually with `nix build .#helloworld` and `nix build .#rust`. They are copied into the initramfs for you. There is a `buildCModule` and `buildRustModule` function exposed for building your own modules (`build/rust-module.nix` and `build/c-module.nix`).
 
 ### eBPF Support
 
@@ -133,19 +132,40 @@ Remote GDB debugging is activated through the `rungdb` command (`build/run-gdb.n
 
 The initial ram disk is built using the new [make-initrd-ng](https://github.com/NixOS/nixpkgs/tree/master/pkgs/build-support/kernel/make-initrd-ng). It is called through its [nix wrapper](https://github.com/NixOS/nixpkgs/blob/master/pkgs/build-support/kernel/make-initrd-ng.nix) which safely copies the nix store packages needed over. To see how to include modules and other options see the builder, `build/initramfs.nix`.
 
-### Neovim Editor
+### Editor
 
-A neovim editor is provided that is set up for Nix, C (CCLS), and Rust (Rust-Analyzer). See my [neovim-flake](https://github.com/jordanisaacs/neovim-flake) for more details on how the configuration works. It is enabled by default but can be disabled in `flake.nix` by setting `enableEditor = false`.
-
-![editor preview](https://user-images.githubusercontent.com/19742638/201808644-68674027-277e-4d61-9ebe-e2197b570730.png)
+How to get language servers working.
 
 #### C
 
-Clang-format was copied over from the linux source tree. To get CCLS working correctly call `bear -- make` to get a `compile_commands.json`. Then open up C files.
+Clang-format was copied over from the linux source tree. To get CCLS working correctly call `bear -- make` to get a `compile_commands.json`. Then open up C files in your favorite editor with an LSP set up.
 
 #### Rust
 
 The flake is configured to build the kernel with a `rust-project.json` but it is not usable to out of tree modules. A script is run that parses the kernel's `rust-project.json` and generates one for the module itself. It is accessed with `make rust-analyzer`. Credit to thepacketgeek for the [script](https://github.com/Rust-for-Linux/rust-out-of-tree-module/pull/2). Additionally, rust-analyzer is designed to use `cargo check` for diagnostics. There is an opt-out to use rustc outputs which is configured within the editor's rust-analyzer configuration.
+
+The rust-analyzer options should be look something along the lines of:
+
+```nix
+let
+  cmd =
+    writeShellScript
+    "module-ra-check"
+    ''make -s "KRUSTFLAGS+=--error-format=json" 2>&1 | grep -v "^make"'';
+in ''
+  ["rust-analyzer"] = {
+    cargo = {
+      buildScripts = {
+        overrideCommand = {"${cmd}"},
+      },
+    },
+    checkOnSave = {
+      overrideCommand = {"${cmd}"},
+    },
+  },
+'';
+```
+
 
 ### Direnv
 

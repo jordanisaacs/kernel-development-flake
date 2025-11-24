@@ -3,65 +3,36 @@
   lib ? pkgs.lib,
   enableRust,
   enableBPF,
-  enableGdb,
-  useRustForLinux,
-}: let
-  version = "6.1.4";
+}:
+let
+  version = "6.17.8";
   localVersion = "-development";
-in {
+in
+{
   kernelArgs = {
-    inherit enableRust enableGdb;
+    inherit enableRust;
 
     inherit version;
-    src =
-      if useRustForLinux
-      then
-        builtins.fetchurl {
-          url = "https://github.com/Rust-for-Linux/linux/archive/bd123471269354fdd504b65b1f1fe5167cb555fc.tar.gz";
-          sha256 = "sha256-BcTrK9tiGgCsmYaKpS/Xnj/nsCVGA2Aoa1AktHBgbB0=";
-        }
-      else
-        pkgs.fetchurl {
-          url = "mirror://kernel/linux/kernel/v6.x/linux-${version}.tar.xz";
-          sha256 = "sha256-iqj2T6YLsTOBqWCNH++90FVeKnDECyx9BnGw1kqkVZ4=";
-        };
+    src = pkgs.fetchurl {
+      url = "mirror://kernel/linux/kernel/v6.x/linux-${version}.tar.xz";
+      sha256 = "1nmi5xmsys023xgy55dikm1ihim7fp7pf2kc3k00d9zwfm5fd3as";
+    };
 
     # Add kernel patches here
-    kernelPatches = let
-      fetchSet = lib.imap1 (i: hash: {
-        # name = " "kbuild-v${builtins.toString i}";
-        patch = pkgs.fetchpatch {
-          inherit hash;
-          url = "https://lore.kernel.org/rust-for-linux/20230109204520.539080-${builtins.toString i}-ojeda@kernel.org/raw";
-        };
-      });
-
-      patches = fetchSet [
-        "sha256-6WTde8P8GkDcBwVnlS6jws126vU7TCxF6/pLgFZE5gc="
-        "sha256-2RBeX5vFN88GVgRkzwK/7Gzl2iSWr4OqkdqoSgJPml0="
-        "sha256-oyR4traQbjq0+OMVL8q6UZicBh43TKN1BlhZsCTy7aU="
-        "sha256-2RBeX5vFN88GVgRkzwK/7Gzl2iSWr4OqkdqoSgJPml0="
-        "sha256-05VnWFMMar7YILTHVh9RLueRlW00pk3CjGKT7XDb7D0="
-        "sha256-qOZaHfZMc7Y2A0LdDJDO3Zi7QbdsBxZZoPmYKahkznw="
-      ];
-    in
-      patches;
+    kernelPatches = [
+      {
+        patch = ../patches/0001-rust-don-t-assert-sysroot_src-location.patch;
+      }
+    ];
 
     inherit localVersion;
-    modDirVersion = let
-      appendV =
-        if useRustForLinux
-        then ".0-rc1"
-        else "";
-    in
-      version + appendV + localVersion;
+    modDirVersion = version + localVersion;
   };
 
   kernelConfig = {
-    inherit enableRust;
-
     # See https://github.com/NixOS/nixpkgs/blob/master/nixos/modules/system/boot/kernel_config.nix
-    structuredExtraConfig = with lib.kernel;
+    structuredExtraConfig =
+      with lib.kernel;
       {
         DEBUG_FS = yes;
         DEBUG_KERNEL = yes;
@@ -126,6 +97,8 @@ in {
         MODULES = yes;
         MODULE_UNLOAD = yes;
 
+        DEBUG_INFO_DWARF_TOOLCHAIN_DEFAULT = yes;
+        GDB_SCRIPTS = yes;
         # FW_LOADER = yes;
       }
       // lib.optionalAttrs enableBPF {
@@ -140,10 +113,6 @@ in {
         RUST = yes;
         RUST_OVERFLOW_CHECKS = yes;
         RUST_DEBUG_ASSERTIONS = yes;
-      }
-      // lib.optionalAttrs enableGdb {
-        DEBUG_INFO_DWARF_TOOLCHAIN_DEFAULT = yes;
-        GDB_SCRIPTS = yes;
       };
 
     # Flags that get passed to generate-config.pl

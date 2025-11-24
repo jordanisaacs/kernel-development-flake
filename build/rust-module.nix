@@ -1,16 +1,23 @@
 {
   stdenv,
   nukeReferences,
-  rustc,
-}: {kernel}: {
+  rustc-unwrapped,
+}:
+{ kernel }:
+{
   name,
   src,
+  dontStrip ? false,
 }:
 stdenv.mkDerivation {
   KERNEL = kernel.dev;
   KERNEL_VERSION = kernel.modDirVersion;
-  buildInputs = [kernel.dev nukeReferences rustc];
-  inherit name src;
+  buildInputs = [
+    kernel.dev
+    nukeReferences
+    rustc-unwrapped
+  ];
+  inherit name src dontStrip;
 
   installPhase = ''
     mkdir -p $out/lib/modules/$KERNEL_VERSION/misc
@@ -20,5 +27,5 @@ stdenv.mkDerivation {
     done
   '';
 
-  meta.platforms = ["x86_64-linux"];
+  meta.platforms = [ "x86_64-linux" ];
 }

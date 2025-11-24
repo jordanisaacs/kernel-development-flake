@@ -6,55 +6,60 @@
   bash,
   busybox,
   kmod,
-}: {
+}:
+{
   kernel,
-  modules ? [],
-  extraBin ? {},
-  extraContent ? {},
-  storePaths ? [],
+  modules ? [ ],
+  extraBin ? { },
+  extraContent ? { },
+  storePaths ? [ ],
   extraInit ? "",
-}: let
-  busyboxStatic = busybox.override {enableStatic = true;};
+}:
+let
+  busyboxStatic = busybox.override { enableStatic = true; };
 
   initrdBinEnv = buildEnv {
     name = "initrd-emergency-env";
     paths = map lib.getBin initrdBin;
-    pathsToLink = ["/bin" "/sbin"];
-    postBuild = lib.concatStringsSep "\n" (lib.mapAttrsToList (n: v: "ln -s ${v} $out/bin/${n}") extraBin);
+    pathsToLink = [
+      "/bin"
+      "/sbin"
+    ];
+    postBuild = lib.concatStringsSep "\n" (
+      lib.mapAttrsToList (n: v: "ln -s ${v} $out/bin/${n}") extraBin
+    );
   };
 
   moduleEnv = buildEnv {
     name = "initrd-modules";
     paths = modules;
-    pathsToLink = ["/lib/modules/${kernel.modDirVersion}/misc"];
+    pathsToLink = [ "/lib/modules/${kernel.modDirVersion}/misc" ];
   };
 
-  content =
-    {
-      "/bin" = "${initrdBinEnv}/bin";
-      "/sbin" = "${initrdBinEnv}/sbin";
-      "/init" = init;
-      "/modules" = "${moduleEnv}/lib/modules/${kernel.modDirVersion}/misc";
-    }
-    // extraContent;
+  content = {
+    "/bin" = "${initrdBinEnv}/bin";
+    "/sbin" = "${initrdBinEnv}/sbin";
+    "/init" = init;
+    "/modules" = "${moduleEnv}/lib/modules/${kernel.modDirVersion}/misc";
+  }
+  // extraContent;
 
-  initrdBin = [bash busyboxStatic kmod];
+  initrdBin = [
+    bash
+    busyboxStatic
+    kmod
+  ];
 
   initialRamdisk = makeInitrdNG {
     compressor = "gzip";
-    strip = false;
     contents =
       map (path: {
-        object = path;
-        symlink = "";
-      })
-      storePaths
-      ++ lib.mapAttrsToList
-      (n: v: {
-        object = v;
-        symlink = n;
-      })
-      content;
+        source = path;
+      }) storePaths
+      ++ lib.mapAttrsToList (n: v: {
+        source = v;
+        target = n;
+      }) content;
   };
 
   init = writeScript "init" ''
@@ -97,4 +102,4 @@
     exec setsid -c /bin/sh
   '';
 in
-  initialRamdisk
+initialRamdisk

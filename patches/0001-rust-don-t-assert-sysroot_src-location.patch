@@ -1,0 +1,28 @@
+From d2dfa92fd72ef9affa12ce080fe93e29eb5baeab Mon Sep 17 00:00:00 2001
+From: Jordan Isaacs <jordan@snowytrees.dev>
+Date: Sun, 23 Nov 2025 15:08:51 -0800
+Subject: [PATCH] rust: don't assert sysroot_src location
+
+In nix sysroot source is in a separate location than the sysroot
+itself.
+---
+ scripts/generate_rust_analyzer.py | 3 ---
+ 1 file changed, 3 deletions(-)
+
+diff --git a/scripts/generate_rust_analyzer.py b/scripts/generate_rust_analyzer.py
+index fc27f0cca752..6719d2428d3e 100755
+--- a/scripts/generate_rust_analyzer.py
++++ b/scripts/generate_rust_analyzer.py
+@@ -192,9 +192,6 @@ def main():
+         level=logging.INFO if args.verbose else logging.WARNING
+     )
+ 
+-    # Making sure that the `sysroot` and `sysroot_src` belong to the same toolchain.
+-    assert args.sysroot in args.sysroot_src.parents
+-
+     rust_project = {
+         "crates": generate_crates(args.srctree, args.objtree, args.sysroot_src, args.exttree, args.cfgs, args.core_edition),
+         "sysroot": str(args.sysroot),
+-- 
+2.51.2
+

@@ -1,7 +1,9 @@
 {
   stdenv,
   nukeReferences,
-}: {kernel}: {
+}:
+{ kernel }:
+{
   name,
   src,
   dontStrip ? false,
@@ -9,7 +11,10 @@
 stdenv.mkDerivation {
   KERNEL = kernel.dev;
   KERNEL_VERSION = kernel.modDirVersion;
-  buildInputs = [nukeReferences kernel.dev];
+  buildInputs = [
+    nukeReferences
+    kernel.dev
+  ];
   inherit name src dontStrip;
 
   installPhase = ''
@@ -20,5 +25,5 @@ stdenv.mkDerivation {
     done
   '';
 
-  meta.platforms = ["x86_64-linux"];
+  meta.platforms = [ "x86_64-linux" ];
 }

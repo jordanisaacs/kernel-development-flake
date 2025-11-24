@@ -10,109 +10,112 @@
   pahole,
   buildPackages,
   rustPlatform,
-  rustc,
-  rustfmt,
-  cargo,
-  rust-bindgen,
-}: {
+  rust-bindgen-unwrapped,
+  rustc-unwrapped,
+}:
+{
   nixpkgs,
   kernel,
   # generate-config.pl flags. see below
   generateConfigFlags,
-  structuredExtraConfig,
-  enableRust ? false,
-}: let
-  nativeBuildInputs =
-    [perl gmp libmpc mpfr bison flex]
-    ++ lib.optionals enableRust [rustfmt rustc cargo rust-bindgen];
-
-  passthru = rec {
-    module = import "${nixpkgs}/nixos/modules/system/boot/kernel_config.nix";
-    # used also in apache
-    # { modules = [ { options = res.options; config = svc.config or svc; } ];
-    #   check = false;
-    # The result is a set of two attributes
-    moduleStructuredConfig =
-      (lib.evalModules {
-        modules = [
-          module
-          {
-            settings = structuredExtraConfig;
-            _file = "structuredExtraConfig";
-          }
-        ];
-      })
-      .config;
-
-    structuredConfig = moduleStructuredConfig.settings;
-  };
+  configModule,
+}:
+let
+  withRust = ((configModule.structuredConfig.RUST or { }).tristate or null) == "y";
 in
-  stdenv.mkDerivation (
-    {
-      kernelArch = stdenv.hostPlatform.linuxArch;
-      extraMakeFlags = [];
+stdenv.mkDerivation {
+  kernelArch = stdenv.hostPlatform.linuxArch;
+  extraMakeFlags = [ ];
 
-      inherit (kernel) src patches version;
-      pname = "linux-config";
+  inherit (kernel) src patches version;
+  pname = "linux-config";
 
-      # Flags that get passed to generate-config.pl
-      # ignoreConfigErrors: Ignores any config errors in script (eg unused options)
-      # autoModules: Build every available module
-      # preferBuiltin: Build modules as builtin
-      inherit (generateConfigFlags) autoModules preferBuiltin ignoreConfigErrors;
-      generateConfig = "${nixpkgs}/pkgs/os-specific/linux/kernel/generate-config.pl";
+  # Flags that get passed to generate-config.pl
+  # ignoreConfigErrors: Ignores any config errors in script (eg unused options)
+  # autoModules: Build every available module
+  # preferBuiltin: Build modules as builtin
+  inherit (generateConfigFlags) autoModules preferBuiltin ignoreConfigErrors;
+  generateConfig = "${nixpkgs}/pkgs/os-specific/linux/kernel/generate-config.pl";
 
-      kernelConfig = passthru.moduleStructuredConfig.intermediateNixConfig;
-      passAsFile = ["kernelConfig"];
+  kernelConfig = configModule.moduleStructuredConfig.intermediateNixConfig;
+  passAsFile = [ "kernelConfig" ];
 
-      depsBuildBuild = [buildPackages.stdenv.cc];
-      inherit nativeBuildInputs;
+  depsBuildBuild = [ buildPackages.stdenv.cc ];
+  nativeBuildInputs = [
+    perl
+    gmp
+    libmpc
+    mpfr
+    bison
+    flex
+    pahole
+  ]
+  ++ lib.optionals withRust [
+    rust-bindgen-unwrapped
+    rustc-unwrapped
+  ];
 
-      platformName = stdenv.hostPlatform.linux-kernel.name;
-      # e.g. "bzImage"
-      kernelTarget = stdenv.hostPlatform.linux-kernel.target;
+  RUST_LIB_SRC = lib.optionalString withRust rustPlatform.rustLibSrc;
 
-      makeFlags =
-        lib.optionals (stdenv.hostPlatform.linux-kernel ? makeFlags) stdenv.hostPlatform.linux-kernel.makeFlags;
+  platformName = stdenv.hostPlatform.linux-kernel.name;
+  # e.g. "bzImage"
+  kernelTarget = stdenv.hostPlatform.linux-kernel.target;
 
-      postPatch =
-        kernel.postPatch
-        + ''
-          # Patch kconfig to print "###" after every question so that
-          # generate-config.pl from the generic builder can answer them.
-          sed -e '/fflush(stdout);/i\printf("###");' -i scripts/kconfig/conf.c
-        '';
+  makeFlags = lib.optionals (
+    stdenv.hostPlatform.linux-kernel ? makeFlags
+  ) stdenv.hostPlatform.linux-kernel.makeFlags;
 
-      preUnpack = kernel.preUnpack or "";
+  postPatch = kernel.postPatch + ''
+    # Patch kconfig to print "###" after every question so that
+    # generate-config.pl from the generic builder can answer them.
+    sed -e '/fflush(stdout);/i\printf("###");' -i scripts/kconfig/conf.c
+  '';
 
-      buildPhase = ''
-        export buildRoot="''${buildRoot:-build}"
-        export HOSTCC=$CC_FOR_BUILD
-        export HOSTCXX=$CXX_FOR_BUILD
-        export HOSTAR=$AR_FOR_BUILD
-        export HOSTLD=$LD_FOR_BUILD
-        # Get a basic config file for later refinement with $generateConfig.
-        make $makeFlags \
-          -C . O="$buildRoot" allnoconfig \
-          HOSTCC=$HOSTCC HOSTCXX=$HOSTCXX HOSTAR=$HOSTAR HOSTLD=$HOSTLD \
-          CC=$CC OBJCOPY=$OBJCOPY OBJDUMP=$OBJDUMP READELF=$READELF \
-          $makeFlags
+  preUnpack = kernel.preUnpack or "";
 
-        # Create the config file.
-        echo "generating kernel configuration..."
-        ln -s "$kernelConfigPath" "$buildRoot/kernel-config"
-        DEBUG=1 ARCH=$kernelArch KERNEL_CONFIG="$buildRoot/kernel-config" AUTO_MODULES=$autoModules \
-          PREFER_BUILTIN=$preferBuiltin BUILD_ROOT="$buildRoot" SRC=. MAKE_FLAGS="$makeFlags" \
-          perl -w $generateConfig
-      '';
+  buildPhase = ''
+    export buildRoot="''${buildRoot:-build}"
+    export HOSTCC=$CC_FOR_BUILD
+    export HOSTCXX=$CXX_FOR_BUILD
+    export HOSTAR=$AR_FOR_BUILD
+    export HOSTLD=$LD_FOR_BUILD
 
-      installPhase = "mv $buildRoot/.config $out";
+    # Get a basic config file for later refinement with $generateConfig.
+    make $makeFlags \
+      -C . O="$buildRoot" allnoconfig \
+      ARCH=$kernelArch CROSS_COMPILE=${stdenv.cc.targetPrefix} \
+      $makeFlags
 
-      enableParallelBuilding = true;
+    # Create the config file.
+    echo "generating kernel configuration..."
+    ln -s "$kernelConfigPath" "$buildRoot/kernel-config"
+    DEBUG=1 ARCH=$kernelArch CROSS_COMPILE=${stdenv.cc.targetPrefix} \
+      KERNEL_CONFIG="$buildRoot/kernel-config" AUTO_MODULES=$autoModules \
+      PREFER_BUILTIN=$preferBuiltin BUILD_ROOT="$buildRoot" SRC=. MAKE_FLAGS="$makeFlags" \
+      perl -w $generateConfig
+  ''
+  + lib.optionalString stdenv.cc.isClang ''
+        if ! grep -Fq CONFIG_CC_IS_CLANG=y $buildRoot/.config; then
+      echo "Kernel config didn't recognize the clang compiler?"
+      exit 1
+    fi
+  ''
+  + lib.optionalString stdenv.cc.bintools.isLLVM ''
+    if ! grep -Fq CONFIG_LD_IS_LLD=y $buildRoot/.config; then
+      echo "Kernel config didn't recognize the LLVM linker?"
+      exit 1
+    fi
+  ''
+  + lib.optionalString withRust ''
+    if ! grep -Fq CONFIG_RUST_IS_AVAILABLE=y $buildRoot/.config; then
+      echo "Kernel config didn't find Rust toolchain?"
+      exit 1
+    fi
+  '';
 
-      inherit passthru;
-    }
-    // lib.optionalAttrs enableRust {
-      RUST_LIB_SRC = rustPlatform.rustLibSrc;
-    }
-  )
+  installPhase = "mv $buildRoot/.config $out";
+
+  enableParallelBuilding = true;
+
+  passthru = configModule;
+}

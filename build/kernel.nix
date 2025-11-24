@@ -2,98 +2,168 @@
   stdenv,
   lib,
   callPackage,
-  rustc,
-  cargo,
-  rust-bindgen,
-  buildPackages,
+  bison,
+  flex,
+  perl,
+  bc,
+  openssl,
+  rsync,
+  gmp,
+  libmpc,
+  mpfr,
+  elfutils,
+  zstd,
+  python3Minimal,
+  kmod,
+  hexdump,
+  cpio,
+  pahole,
+  zlib,
+  rustc-unwrapped,
+  rust-bindgen-unwrapped,
   rustPlatform,
-}: {
+}:
+{
   src,
   configfile,
+  # Up to caller to ensure that 'configfile' was generated from this
+  # 'configModule'.
+  #
+  # This is a hack. It is accessible as passthru in 'configfile' but it results
+  # in infinite recursion. So instead we pass in 'configModule' separate from
+  # 'configFile'.
+  configModule,
   modDirVersion,
   version,
-  enableRust ? false, # Install the Rust Analyzer
-  enableGdb ? false, # Install the GDB scripts
-  kernelPatches ? [],
+  kernelPatches ? [ ],
   nixpkgs, # Nixpkgs source
-}: let
+}:
+let
+  config = configModule.structuredConfig;
+
+  # Using custom checkers that work with the config module.
+  #
+  configAcc = rec {
+    getValue = attr: config.${attr}.tristate or null;
+
+    isYes = attr: getValue attr == "y";
+  };
+  withRust = configAcc.isYes "RUST";
   kernel =
-    ((callPackage "${nixpkgs}/pkgs/os-specific/linux/kernel/manual-config.nix" {})
-      {
-        inherit src modDirVersion version kernelPatches configfile;
-        inherit lib stdenv;
+    ((callPackage "${nixpkgs}/pkgs/os-specific/linux/kernel/build.nix" { }) {
+      inherit
+        src
+        modDirVersion
+        version
+        kernelPatches
+        configfile
+        ;
+      inherit lib stdenv config;
+    }).overrideAttrs
+      (old: {
+        dontStrip = true;
 
-        # Because allowedImportFromDerivation is not enabled,
-        # the function cannot set anything based on the configfile. These settings do not
-        # actually change the .config but let the kernel derivation know what can be built.
-        # See manual-config.nix for other options
-        config = {
-          # Enables the dev build
-          CONFIG_MODULES = "y";
+        # We always install modules
+        outputs = [
+          "out"
+          "dev"
+          "modules"
+        ];
+
+        buildFlags = [
+          "KBUILD_BUILD_VERSION=1-NixOS"
+          stdenv.hostPlatform.linux-kernel.target
+          "vmlinux" # for "perf" and things like that
+          "modules"
+          "scripts_gdb"
+        ]
+        ++ lib.optional withRust "rust-analyzer";
+
+        installFlags = [
+          "INSTALL_PATH=${placeholder "out"}"
+          "INSTALL_MOD_PATH=${placeholder "modules"}"
+        ];
+
+        nativeBuildInputs = [
+          bison
+          flex
+          perl
+          bc
+          openssl
+          rsync
+          gmp
+          libmpc
+          mpfr
+          elfutils
+          zstd
+          python3Minimal
+          kmod
+          hexdump
+        ]
+        ++ lib.optionals (lib.versionAtLeast version "5.2") [
+          cpio
+          pahole
+          zlib
+        ]
+        ++ lib.optionals withRust [
+          rustc-unwrapped
+          rust-bindgen-unwrapped
+        ];
+
+        env = {
+          RUST_LIB_SRC = lib.optionalString withRust rustPlatform.rustLibSrc;
+
+          # avoid leaking Rust source file names into the final binary, which adds
+          # a false dependency on rust-lib-src on targets with uncompressed kernels
+          # UNDONE: I think we don't want this, comment for now.
+          # KRUSTFLAGS = lib.optionalString withRust "--remap-path-prefix ${rustPlatform.rustLibSrc}=/";
         };
-      })
-    .overrideAttrs (old: {
-      nativeBuildInputs =
-        old.nativeBuildInputs
-        ++ lib.optionals enableRust [rustc cargo rust-bindgen];
-      RUST_LIB_SRC = lib.optionalString enableRust rustPlatform.rustLibSrc;
 
-      dontStrip = true;
+        postInstall = ''
+          mkdir -p $dev
+          cp vmlinux $dev/
 
-      postInstall = ''
-        mkdir -p $dev
-        cp vmlinux $dev/
-        if [ -z "''${dontStrip-}" ]; then
-          installFlagsArray+=("INSTALL_MOD_STRIP=1")
-        fi
-        make modules_install $makeFlags "''${makeFlagsArray[@]}" \
-          $installFlags "''${installFlagsArray[@]}"
-        unlink $out/lib/modules/${modDirVersion}/build
-        unlink $out/lib/modules/${modDirVersion}/source
+          mkdir -p $dev/lib/modules/${modDirVersion}/{build,source}
+          cp -rL $buildRoot/scripts $dev/lib/modules/${modDirVersion}/build/
+          cp -L $buildRoot/vmlinux-gdb.py $dev/lib/modules/${modDirVersion}/build/scripts/gdb/
+          ln -sfn $dev/lib/modules/${modDirVersion}/build/scripts/gdb/vmlinux-gdb.py $dev/lib/modules/${modDirVersion}/build/vmlinux-gdb.py
 
-        mkdir -p $dev/lib/modules/${modDirVersion}/{build,source}
-
-        # To save space, exclude a bunch of unneeded stuff when copying.
-        (cd .. && rsync --archive --prune-empty-dirs \
-            --exclude='/build/' \
-            * $dev/lib/modules/${modDirVersion}/source/)
-
-        cd $dev/lib/modules/${modDirVersion}/source
-
-        cp $buildRoot/{.config,Module.symvers} $dev/lib/modules/${modDirVersion}/build
-
-        make modules_prepare $makeFlags "''${makeFlagsArray[@]}" O=$dev/lib/modules/${modDirVersion}/build
-        ${lib.optionalString enableRust ''
-          make rust-analyzer $makeFlags "''${makeFlagsArray[@]}" O=$dev/lib/modules/${modDirVersion}/build
-        ''}
-        ${lib.optionalString enableGdb ''
-          echo "Make scripts"
-          make scripts_gdb $makeFlags "''${makeFlagsArray[@]}" O=$dev/lib/modules/${modDirVersion}/build
-        ''}
-
-        # For reproducibility, removes accidental leftovers from a `cc1` call
-        # from a `try-run` call from the Makefile
-        rm -f $dev/lib/modules/${modDirVersion}/build/.[0-9]*.d
-
-        # Keep some extra files on some arches (powerpc, aarch64)
-        for f in arch/powerpc/lib/crtsavres.o arch/arm64/kernel/ftrace-mod.o; do
-          if [ -f "$buildRoot/$f" ]; then
-            cp $buildRoot/$f $dev/lib/modules/${modDirVersion}/build/$f
+          if [ -z "''${dontStrip-}" ]; then
+            installFlags+=("INSTALL_MOD_STRIP=1")
           fi
-        done
+          make modules_install "''${makeFlags[@]}" "''${installFlags[@]}"
+          unlink $modules/lib/modules/${modDirVersion}/build
 
-        # Not doing the nix default of removing files from the source tree.
-        # This is because the source tree is necessary for debugging with GDB.
+          # To save space, exclude a bunch of unneeded stuff when copying.
+          (cd .. && rsync --archive --prune-empty-dirs \
+              --exclude='/build/' \
+              * $dev/lib/modules/${modDirVersion}/source/)
 
-        # Remove reference to kmod
-        sed -i Makefile -e 's|= ${buildPackages.kmod}/bin/depmod|= depmod|'
-      '';
-    });
+          cd $dev/lib/modules/${modDirVersion}/source
+          cp $buildRoot/{.config,Module.symvers} $dev/lib/modules/${modDirVersion}/build
+
+          make modules_prepare "''${makeFlags[@]}" O=$dev/lib/modules/${modDirVersion}/build
+
+          # For reproducibility, removes accidental leftovers from a `cc1` call
+          # from a `try-run` call from the Makefile
+          rm -f $dev/lib/modules/${modDirVersion}/build/.[0-9]*.d
+
+          # Keep some extra files on some arches (powerpc, aarch64)
+          for f in arch/powerpc/lib/crtsavres.o arch/arm64/kernel/ftrace-mod.o; do
+            if [ -f "$buildRoot/$f" ]; then
+              cp $buildRoot/$f $dev/lib/modules/${modDirVersion}/build/$f
+            fi
+          done
+
+          # Not doing the nix default of removing files from the source tree.
+          # This is because the source tree is necessary for debugging with GDB.
+        '';
+      });
 
   kernelPassthru = {
     inherit (configfile) structuredConfig;
     inherit modDirVersion configfile;
-    passthru = kernel.passthru // (removeAttrs kernelPassthru ["passthru"]);
+    passthru = kernel.passthru // (removeAttrs kernelPassthru [ "passthru" ]);
   };
 in
-  lib.extendDerivation true kernelPassthru kernel
+lib.extendDerivation true kernelPassthru kernel
