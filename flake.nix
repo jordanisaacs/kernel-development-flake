@@ -3,12 +3,22 @@
 
   inputs = {
     nixpkgs.url = "github:nixos/nixpkgs/nixpkgs-unstable";
+    fenix = {
+      url = "github:nix-community/fenix";
+      inputs.nixpkgs.follows = "nixpkgs";
+    };
+    naersk = {
+      url = "github:nix-community/naersk";
+      inputs.nixpkgs.follows = "nixpkgs";
+    };
   };
 
   outputs =
     {
       self,
       nixpkgs,
+      fenix,
+      naersk,
     }:
     let
       system = "x86_64-linux";
@@ -116,6 +126,10 @@
         builtins.readFile ./scripts/generate_rust_analyzer.py
       );
 
+      avy-init = pkgs.callPackage ./avy-init {
+        inherit fenix naersk;
+      };
+
       devShell =
         let
           nativeBuildInputs =
@@ -167,6 +181,7 @@
           ebpf-stacktrace
           rustModule
           genRustAnalyzer
+          avy-init
           ;
         kernelConfig = configfile;
       };
