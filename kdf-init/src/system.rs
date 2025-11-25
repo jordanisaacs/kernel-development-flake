@@ -126,3 +126,16 @@ pub fn load_kernel_modules(modules_dir: Option<&str>) -> Result<()> {
 
     Ok(())
 }
+
+pub fn shutdown() -> Result<()> {
+    use rustix::system::reboot;
+    use rustix::system::RebootCommand;
+
+    println!("kdf-init: shutting down system");
+
+    // Perform system shutdown
+    reboot(RebootCommand::PowerOff)
+        .context("Failed to shutdown system")?;
+
+    Ok(())
+}

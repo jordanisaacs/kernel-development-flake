@@ -35,5 +35,9 @@ fn main() -> Result<()> {
     // TODO: Execute command
 
     println!("kdf-init: initialization complete (stub)");
+
+    // Shutdown the system
+    system::shutdown()?;
+
     Ok(())
 }
