@@ -10,9 +10,9 @@ import sys
 import tempfile
 from pathlib import Path
 
-from bg_tasks import BackgroundTaskManager
-from qemu import QemuCommand
-from virtiofs import VirtiofsError, create_virtiofs_tasks
+from kdf_cli.bg_tasks import BackgroundTaskManager
+from kdf_cli.qemu import QemuCommand
+from kdf_cli.virtiofs import VirtiofsError, create_virtiofs_tasks
 
 # Set up logging
 logging.basicConfig(
@@ -272,7 +272,7 @@ def cmd_run(args):
 
 
 def main():
-    parser = argparse.ArgumentParser(description="kdf: Kernel development flake tools")
+    parser = argparse.ArgumentParser(prog="kdf", description="kdf: Kernel development flake tools")
     subparsers = parser.add_subparsers(dest="command", help="Subcommands")
 
     # build initramfs subcommand

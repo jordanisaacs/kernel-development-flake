@@ -7,10 +7,10 @@ import time
 from pathlib import Path
 from typing import List, TYPE_CHECKING
 
-from bg_tasks import BackgroundTask, BackgroundTaskManager
+from kdf_cli.bg_tasks import BackgroundTask, BackgroundTaskManager
 
 if TYPE_CHECKING:
-    from qemu import QemuCommand
+    from kdf_cli.qemu import QemuCommand
 
 logger = logging.getLogger('kdf.virtiofs')
 

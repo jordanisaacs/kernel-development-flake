@@ -11,6 +11,21 @@
       url = "github:nix-community/naersk";
       inputs.nixpkgs.follows = "nixpkgs";
     };
+    pyproject-nix = {
+      url = "github:pyproject-nix/pyproject.nix";
+      inputs.nixpkgs.follows = "nixpkgs";
+    };
+    uv2nix = {
+      url = "github:adisbladis/uv2nix";
+      inputs.nixpkgs.follows = "nixpkgs";
+      inputs.pyproject-nix.follows = "pyproject-nix";
+    };
+    pyproject-build-systems = {
+      url = "github:pyproject-nix/build-system-pkgs";
+      inputs.nixpkgs.follows = "nixpkgs";
+      inputs.pyproject-nix.follows = "pyproject-nix";
+      inputs.uv2nix.follows = "uv2nix";
+    };
   };
 
   outputs =
@@ -19,6 +34,9 @@
       nixpkgs,
       fenix,
       naersk,
+      pyproject-nix,
+      uv2nix,
+      pyproject-build-systems,
     }:
     let
       system = "x86_64-linux";
@@ -130,6 +148,10 @@
         inherit fenix naersk;
       };
 
+      kdf-cli = pkgs.callPackage ./kdf-cli {
+        inherit uv2nix pyproject-nix pyproject-build-systems;
+      };
+
       devShell =
         let
           # Rust toolchain with musl target for static compilation
@@ -187,6 +209,7 @@
           rustModule
           genRustAnalyzer
           kdf-init
+          kdf-cli
           ;
         kernelConfig = configfile;
       };
