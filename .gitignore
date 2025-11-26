@@ -21,6 +21,7 @@ result-dev
 target/
 *.cpio
 kdf.log
+.kdf-resources
 
 # Python
 __pycache__/

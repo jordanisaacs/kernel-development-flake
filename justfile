@@ -89,3 +89,16 @@ check-fmt-nix:
 # Format Nix files
 fix-fmt-nix:
     nix fmt
+
+# Build kdf-init statically with musl
+build-init:
+    cd kdf-init && cargo build --release --target x86_64-unknown-linux-musl
+
+# Build kdf-init and run with system kernel
+run: build-init
+    #!/usr/bin/env bash
+    set -e
+    echo "Running kdf with system kernel..."
+    mkdir -p .kdf-resources
+    cp kdf-init/target/x86_64-unknown-linux-musl/release/init .kdf-resources/init
+    KDF_RESOURCE_DIR="$PWD/.kdf-resources" kdf run -r
