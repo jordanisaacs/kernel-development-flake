@@ -111,4 +111,4 @@ run: build-init
     echo "Building initramfs..."
     kdf build initramfs .kdf-resources/init --output .kdf-resources/initramfs.cpio
     export KDF_RESOURCE_DIR="$PWD/.kdf-resources"
-    kdf run --kernel "$KERNEL_IMG_DIR/bzImage" --virtiofs nixstore:/nix/store:/nix/store --env PATH=/nix/store/bpcshc0jav1hfpdkdh7a9ssrjv6mdx34-busybox-1.36.1/bin --shell /nix/store/bpcshc0jav1hfpdkdh7a9ssrjv6mdx34-busybox-1.36.1/bin/sh
+    kdf run --kernel "$KERNEL_IMG_DIR/bzImage" --nix busybox

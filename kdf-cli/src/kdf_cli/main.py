@@ -155,6 +155,22 @@ def _configure_init(args: argparse.Namespace, qemu_cmd: QemuCommand) -> None:
             key, value = env_spec.split("=", 1)
             qemu_cmd.init_config.env_vars[key] = value
 
+    # Handle --nix packages for PATH
+    if args.nix is not None and args.nix:
+        # Parse comma-separated package list
+        package_attrs = [pkg.strip() for pkg in args.nix.split(",") if pkg.strip()]
+        if package_attrs:
+            from kdf_cli.nix import resolve_nix_packages
+
+            bin_path = resolve_nix_packages(package_attrs)
+            # Append to existing PATH if present
+            existing_path = qemu_cmd.init_config.env_vars.get("PATH", "")
+            if existing_path:
+                qemu_cmd.init_config.env_vars["PATH"] = f"{existing_path}:{bin_path}"
+            else:
+                qemu_cmd.init_config.env_vars["PATH"] = bin_path
+            logger.info("Added Nix packages to PATH: %s", package_attrs)
+
     # Set shell (always set from args, with default from argparse)
     qemu_cmd.init_config.shell = args.shell
 
@@ -171,9 +187,21 @@ def cmd_run(args: argparse.Namespace) -> None:
     task_manager = BackgroundTaskManager()
 
     try:
+        # Handle --nix option
+        virtiofs_shares = list(args.virtiofs) if args.virtiofs else []
+        if args.nix is not None:
+            # Check if /nix/store virtiofs already exists
+            has_nixstore = any(
+                share.startswith("nixstore:") or ":/nix/store:" in share
+                for share in virtiofs_shares
+            )
+            if not has_nixstore:
+                virtiofs_shares.append("nixstore:/nix/store:/nix/store")
+                logger.info("Adding /nix/store virtiofs mount")
+
         # Create virtiofs tasks (but don't start yet)
-        if args.virtiofs:
-            create_virtiofs_tasks(args.virtiofs, task_manager)
+        if virtiofs_shares:
+            create_virtiofs_tasks(virtiofs_shares, task_manager)
 
         # Start all background tasks
         task_manager.start_all()
@@ -296,6 +324,17 @@ def main() -> None:
         help=(
             "Environment variable to set in VM: KEY=VALUE "
             "(can be specified multiple times)"
+        ),
+    )
+    run_parser.add_argument(
+        "--nix",
+        nargs="?",
+        const="",
+        metavar="PKG1,PKG2,...",
+        help=(
+            "Mount /nix/store as read-only virtiofs. "
+            "Optionally provide comma-separated package names to add to PATH "
+            "(e.g., --nix busybox,coreutils)"
         ),
     )
 

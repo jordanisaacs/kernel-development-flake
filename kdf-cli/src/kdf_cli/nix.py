@@ -169,6 +169,39 @@ def find_modules(modules_drv: str, module_patterns: list[str]) -> list[Path]:
     return modules
 
 
+def resolve_nix_packages(package_attrs: list[str]) -> str:
+    """Resolve Nix package attributes and generate a PATH string using makeBinPath.
+
+    Args:
+        package_attrs: List of package attribute names (e.g., ["busybox", "python3"])
+
+    Returns:
+        A colon-separated PATH string containing bin directories from all packages
+
+    """
+    if not package_attrs:
+        return ""
+
+    # Build Nix expression that creates a list of packages and uses makeBinPath
+    packages_list = " ".join(package_attrs)
+    nix_expr = f"with import <nixpkgs> {{}}; lib.makeBinPath [ {packages_list} ]"
+
+    try:
+        result = subprocess.run(
+            ["nix", "eval", "--raw", "--impure", "--expr", nix_expr],
+            capture_output=True,
+            text=True,
+            check=True,
+        )
+        # nix eval --raw returns the raw string without quotes
+        bin_path = result.stdout.strip()
+        logger.info("Resolved packages %s to PATH: %s", package_attrs, bin_path)
+        return bin_path
+    except subprocess.CalledProcessError as e:
+        logger.exception("Failed to resolve packages %s: %s", package_attrs, e.stderr)
+        raise
+
+
 def resolve_kernel_and_initramfs(
     version: str | None = None,
     custom_initramfs: Path | None = None,
