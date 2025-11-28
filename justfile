@@ -111,4 +111,13 @@ run: build-init
     echo "Building initramfs..."
     kdf build initramfs .kdf-resources/init --output .kdf-resources/initramfs.cpio
     export KDF_RESOURCE_DIR="$PWD/.kdf-resources"
-    kdf run --kernel "$KERNEL_IMG_DIR/bzImage" --nix busybox --virtiofs workdir:"$PWD":/mnt/workdir --chdir /mnt/workdir
+    kdf run --kernel "$KERNEL_IMG_DIR/bzImage" --nix busybox --virtiofs workdir:"$PWD":/mnt/workdir --chdir /mnt/workdir --debug
+
+# Connect to running VM with GDB for runtime module debugging
+debug:
+    #!/usr/bin/env bash
+    MODULE_DIRS=$(find modules -mindepth 1 -maxdepth 1 -type d)
+    python3 scripts/debug_gdb.py \
+        --vmlinux-dir "$KERNEL" \
+        --kernel-version "$KERNEL_VERSION" \
+        --module-dirs $MODULE_DIRS

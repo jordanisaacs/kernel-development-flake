@@ -105,6 +105,7 @@ class QemuCommand:
         kernel: Path,
         initramfs: Path,
         memory: str = "512M",
+        debug: bool = False,
     ) -> None:
         """Initialize QEMU command builder.
 
@@ -112,11 +113,13 @@ class QemuCommand:
             kernel: Path to kernel image
             initramfs: Path to initramfs cpio
             memory: QEMU memory (default: 512M)
+            debug: Enable GDB debugging on port 1234 (default: False)
 
         """
         self.kernel = kernel
         self.initramfs = initramfs
         self.memory = memory
+        self.debug = debug
         # Always use shared memory backing (required for vhost-user devices like
         # virtiofs)
         self.qemu_args = [
@@ -172,6 +175,10 @@ class QemuCommand:
             "-serial",
             "mon:stdio",
         ]
+
+        # Add debug support if enabled (GDB server on port 1234)
+        if self.debug:
+            cmd.append("-s")
 
         # Add configured QEMU args (includes memory configuration)
         cmd.extend(self.qemu_args)

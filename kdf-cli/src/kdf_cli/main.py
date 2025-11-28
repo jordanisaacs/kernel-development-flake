@@ -213,7 +213,7 @@ def cmd_run(args: argparse.Namespace) -> None:
         task_manager.start_all()
 
         # Build QEMU command
-        qemu_cmd = QemuCommand(kernel, initramfs, args.memory)
+        qemu_cmd = QemuCommand(kernel, initramfs, args.memory, args.debug)
 
         # Register all tasks with QEMU (adds runtime info like sockets)
         task_manager.register_all_with_qemu(qemu_cmd)
@@ -365,6 +365,12 @@ def main() -> None:
         "--script",
         "-c",
         help="Script to execute in VM (not yet implemented)",
+    )
+    run_parser.add_argument(
+        "--debug",
+        "-d",
+        action="store_true",
+        help="Enable GDB debugging on port 1234",
     )
 
     args = parser.parse_args()
