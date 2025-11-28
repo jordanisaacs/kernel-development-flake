@@ -49,6 +49,12 @@ fn run() -> Result<()> {
         std::env::set_var(key, value);
     }
 
+    // Change directory if specified
+    if let Some(chdir) = &config.chdir {
+        println!("kdf-init: changing directory to: {}", chdir);
+        std::env::set_current_dir(chdir)?;
+    }
+
     // Execute shell
     let (program, args) = &config.shell;
     let display_cmd = if args.is_empty() {

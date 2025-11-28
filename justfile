@@ -111,4 +111,4 @@ run: build-init
     echo "Building initramfs..."
     kdf build initramfs .kdf-resources/init --output .kdf-resources/initramfs.cpio
     export KDF_RESOURCE_DIR="$PWD/.kdf-resources"
-    kdf run --kernel "$KERNEL_IMG_DIR/bzImage" --nix busybox
+    kdf run --kernel "$KERNEL_IMG_DIR/bzImage" --nix busybox --virtiofs workdir:"$PWD":/mnt/workdir --chdir /mnt/workdir

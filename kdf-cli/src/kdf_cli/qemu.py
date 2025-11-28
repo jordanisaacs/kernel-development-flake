@@ -32,6 +32,7 @@ class InitConfig:
     script: str | None = None
     moddir: str | None = None
     console: str = "console"
+    chdir: str | None = None
 
     def to_cmdline(self) -> list[str]:
         """Convert init configuration to kernel cmdline parameters.
@@ -88,6 +89,10 @@ class InitConfig:
         # Build init.moddir parameter
         if self.moddir:
             params.append(f"init.moddir={self.moddir}")
+
+        # Build init.chdir parameter
+        if self.chdir:
+            params.append(f"init.chdir={self.chdir}")
 
         return params
 

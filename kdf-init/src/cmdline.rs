@@ -66,11 +66,13 @@ pub struct Config {
     pub moddir: Option<String>,
     /// Console device to use - required
     pub console: String,
+    /// Optional directory to change to before spawning shell
+    pub chdir: Option<String>,
 }
 
 /// Parse kernel cmdline into Config
 ///
-/// Supports: init.virtiofs, init.symlinks, init.env.XXX, init.shell, init.script, init.moddir, init.console
+/// Supports: init.virtiofs, init.symlinks, init.env.XXX, init.shell, init.script, init.moddir, init.console, init.chdir
 /// init.shell and init.script values must be wrapped in backticks
 /// init.shell is required, init.script is optional
 /// init.console is required
@@ -82,6 +84,7 @@ pub fn parse_cmdline(cmdline: &str) -> Result<Config> {
     let mut script = None;
     let mut moddir = None;
     let mut console = None;
+    let mut chdir = None;
 
     // Parse parameters respecting backtick-enclosed values
     let params = parse_cmdline_params(cmdline);
@@ -106,6 +109,8 @@ pub fn parse_cmdline(cmdline: &str) -> Result<Config> {
             moddir = Some(value.to_string());
         } else if let Some(value) = param.strip_prefix("init.console=") {
             console = Some(value.to_string());
+        } else if let Some(value) = param.strip_prefix("init.chdir=") {
+            chdir = Some(value.to_string());
         }
     }
 
@@ -121,6 +126,7 @@ pub fn parse_cmdline(cmdline: &str) -> Result<Config> {
         script,
         moddir,
         console,
+        chdir,
     })
 }
 
@@ -286,6 +292,14 @@ mod tests {
         let config = parse_cmdline("init.console=console init.shell=`/bin/sh`").unwrap();
         assert_eq!(config.shell, ("/bin/sh".to_string(), vec![]));
         assert_eq!(config.console, "console");
+        assert_eq!(config.chdir, None);
+    }
+
+    #[test]
+    fn test_parse_chdir() {
+        let config =
+            parse_cmdline("init.console=console init.shell=`sh` init.chdir=/mnt/workdir").unwrap();
+        assert_eq!(config.chdir, Some("/mnt/workdir".to_string()));
     }
 
     #[test]

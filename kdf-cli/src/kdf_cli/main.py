@@ -178,6 +178,10 @@ def _configure_init(args: argparse.Namespace, qemu_cmd: QemuCommand) -> None:
     if args.script:
         qemu_cmd.init_config.script = args.script
 
+    # Set chdir (optional)
+    if args.chdir:
+        qemu_cmd.init_config.chdir = args.chdir
+
 
 def cmd_run(args: argparse.Namespace) -> None:
     """Run QEMU with kernel and initramfs."""
@@ -196,8 +200,10 @@ def cmd_run(args: argparse.Namespace) -> None:
                 for share in virtiofs_shares
             )
             if not has_nixstore:
-                virtiofs_shares.append("nixstore:/nix/store:/nix/store")
-                logger.info("Adding /nix/store virtiofs mount")
+                # Use 'always' cache mode for /nix/store since it's
+                # read-only and immutable
+                virtiofs_shares.append("nixstore:/nix/store:/nix/store::always")
+                logger.info("Adding /nix/store virtiofs mount with 'always' cache")
 
         # Create virtiofs tasks (but don't start yet)
         if virtiofs_shares:
@@ -298,7 +304,12 @@ def main() -> None:
         "--virtiofs",
         "-v",
         action="append",
-        help="Virtiofs share: tag:host_path:guest_path[:overlay]",
+        help=(
+            "Virtiofs share: tag:host_path:guest_path[:overlay][:cache] "
+            "where overlay is 'overlay' or empty, and cache is "
+            "none/auto/always (default: auto). "
+            "Use :: to skip overlay field, e.g., tag:path:path::none"
+        ),
     )
     run_parser.add_argument(
         "--cmdline",
@@ -336,6 +347,11 @@ def main() -> None:
             "Optionally provide comma-separated package names to add to PATH "
             "(e.g., --nix busybox,coreutils)"
         ),
+    )
+    run_parser.add_argument(
+        "--chdir",
+        metavar="DIR",
+        help="Change to directory DIR before spawning shell",
     )
 
     # Shell is always used, script is optional

@@ -38,6 +38,7 @@ class Virtiofsd(BackgroundTask):
         with_overlay: bool,
         runtime_dir: Path,
         device_id: int,
+        cache_mode: str = "auto",
     ) -> None:
         """Initialize virtiofsd configuration.
 
@@ -48,12 +49,14 @@ class Virtiofsd(BackgroundTask):
             with_overlay: Whether to use overlayfs
             runtime_dir: Directory for runtime files (sockets)
             device_id: Unique device ID for QEMU chardev
+            cache_mode: Cache mode (none, auto, always). Default: auto
 
         """
         self.tag = tag
         self.host_path = Path(host_path)
         self.guest_path = guest_path
         self.with_overlay = with_overlay
+        self.cache_mode = cache_mode
         self.socket_path = runtime_dir / f"{tag}.sock"
         self.device_id = device_id
         self.proc = None
@@ -82,6 +85,9 @@ class Virtiofsd(BackgroundTask):
             )
 
         # Build command
+        # Cache mode: none=no caching (see all host changes immediately),
+        #             auto=metadata caching (default),
+        #             always=full caching (best performance)
         cmd = [
             "virtiofsd",
             "--socket-path",
@@ -91,7 +97,7 @@ class Virtiofsd(BackgroundTask):
             "--sandbox",
             "none",
             "--cache",
-            "always",
+            self.cache_mode,
         ]
 
         logger.info(
@@ -190,7 +196,10 @@ def create_virtiofs_tasks(
 
     Args:
         virtiofs_specs: List of virtiofs specs in format
-            tag:host_path:guest_path[:overlay]
+            tag:host_path:guest_path[:overlay][:cache]
+            where overlay is empty or "overlay", and cache is none/auto/always
+            Examples: "share:/mnt:/mnt", "share:/mnt:/mnt:overlay",
+                      "share:/mnt:/mnt::none", "share:/mnt:/mnt:overlay:always"
         task_manager: BackgroundTaskManager to register tasks with
 
     Raises:
@@ -204,12 +213,12 @@ def create_virtiofs_tasks(
     runtime_dir.mkdir(exist_ok=True)
 
     for idx, share_spec in enumerate(virtiofs_specs):
-        # Parse share_spec: tag:host_path:guest_path[:overlay]
+        # Parse share_spec: tag:host_path:guest_path[:overlay][:cache]
         parts = share_spec.split(":")
         if len(parts) < 3:
             msg = (
                 f"Invalid virtiofs spec '{share_spec}': "
-                "must be tag:host_path:guest_path[:overlay]"
+                "must be tag:host_path:guest_path[:overlay][:cache]"
             )
             raise ValueError(
                 msg,
@@ -218,8 +227,34 @@ def create_virtiofs_tasks(
         tag = parts[0]
         host_path = parts[1]
         guest_path = parts[2]
-        with_overlay = len(parts) > 3 and parts[3] == "overlay"
+
+        # Parse optional overlay (4th field - empty string or "overlay")
+        with_overlay = False
+        if len(parts) > 3:
+            if parts[3] == "overlay":
+                with_overlay = True
+            elif parts[3] != "":
+                msg = (
+                    f"Invalid virtiofs spec '{share_spec}': "
+                    f"fourth field must be empty or 'overlay', got '{parts[3]}'"
+                )
+                raise ValueError(msg)
+
+        # Parse optional cache mode (5th field)
+        cache_mode = "auto"
+        if len(parts) > 4:
+            if parts[4] in ("none", "auto", "always"):
+                cache_mode = parts[4]
+            else:
+                msg = (
+                    f"Invalid virtiofs spec '{share_spec}': "
+                    f"fifth field must be cache mode (none/auto/always), "
+                    f"got '{parts[4]}'"
+                )
+                raise ValueError(msg)
 
         # Create virtiofsd task
-        vfsd = Virtiofsd(tag, host_path, guest_path, with_overlay, runtime_dir, idx)
+        vfsd = Virtiofsd(
+            tag, host_path, guest_path, with_overlay, runtime_dir, idx, cache_mode
+        )
         task_manager.add_task(vfsd)
